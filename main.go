@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -101,52 +102,22 @@ func handleVoice(ctx context.Context, b *bot.Bot, update *models.Update) {
 	log.Printf("User /mda-ebat")
 
 	filename := "mda-ebat.ogg"
-	cache := loadCache()
 	caption := "Kolomoiskiy"
 	chatID := update.Message.Chat.ID
 
 	if fileID, ok := getCachedFileID(filename); ok {
 		log.Printf("Using cached file_id for %s", filename)
 		if err := sendCachedVoice(ctx, b, chatID, fileID, caption+"(c)"); err != nil {
-			log.Printf("failed to send cached voice: %v", err)
+			log.Printf("Failed to send cached voice: %v", err)
 		}
 		return
 	}
 
 	// ELSE, it is not cached - load for the first time amnd then save cache
-	// https://github.com/go-telegram/bot/blob/v1.17.0/models/input_file.go#L15
-	f, err := os.Open("mda-ebat.ogg")
-	if err != nil {
-		log.Printf("failed to open voice file: %v", err)
-		return
+
+	if err := uploadAndCacheVoice(ctx, b, chatID, filename, caption); err != nil {
+		log.Printf("Failed to upload and cache voice: %v", err)
 	}
-	defer f.Close()
-
-	voice := &bot.SendVoiceParams{
-		ChatID:  chatID,
-		Voice:   &models.InputFileUpload{Filename: "mda-ebat.ogg", Data: f},
-		Caption: caption, //append (c) later
-	}
-
-	sent, err := b.SendVoice(ctx, voice)
-	if err != nil {
-		log.Printf("failed to send voice: %v", err)
-		return
-	}
-
-	if sent == nil || sent.Voice == nil {
-		log.Printf("no voice info returned from Telegram")
-		return
-	}
-
-	//https://pkg.go.dev/github.com/go-telegram/bot@v1.17.0/models#Voice
-	//https://core.telegram.org/bots/api#voice
-	//FileID will be a cache string from Tg CDN.
-	fileID := sent.Voice.FileID
-	cache[filename] = fileID
-	saveCache(cache)
-
-	log.Printf("Cached new file_id for %s: %s", filename, fileID)
 }
 
 func getCachedFileID(filename string) (string, bool) {
@@ -157,10 +128,45 @@ func getCachedFileID(filename string) (string, bool) {
 
 func sendCachedVoice(ctx context.Context, b *bot.Bot, chatID int64, fileID, caption string) error {
 	voice := &bot.SendVoiceParams{
-		ChatID:  chatID,
+		ChatID: chatID,
+		// https://github.com/go-telegram/bot/blob/v1.17.0/models/input_file.go#L15
 		Voice:   &models.InputFileString{Data: fileID},
 		Caption: caption,
 	}
 	_, err := b.SendVoice(ctx, voice)
-	return err
+	return fmt.Errorf("failed to SendVoiceParams w/ InputFileString: %w", err)
+}
+
+func uploadAndCacheVoice(ctx context.Context, b *bot.Bot, chatID int64, filename, caption string) error {
+	f, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("failed to os.Open voice file: %w", err)
+	}
+	defer f.Close()
+
+	voice := &bot.SendVoiceParams{
+		ChatID: chatID,
+		// https://github.com/go-telegram/bot/blob/v1.17.0/models/input_file.go#L15
+		Voice:   &models.InputFileUpload{Filename: filename, Data: f},
+		Caption: caption,
+	}
+
+	sent, err := b.SendVoice(ctx, voice)
+	if err != nil {
+		return fmt.Errorf("failed to SendVoiceParams w/ InputFileUpload: %w", err)
+	}
+
+	if sent == nil || sent.Voice == nil {
+		return fmt.Errorf("no voice info returned from Telegram")
+	}
+
+	//https://pkg.go.dev/github.com/go-telegram/bot@v1.17.0/models#Voice
+	//https://core.telegram.org/bots/api#voice
+	//FileID will be a cache string from Tg CDN.
+	cache := loadCache()
+	cache[filename] = sent.Voice.FileID
+	saveCache(cache)
+
+	log.Printf("Cached new file_id for %s: %s", filename, sent.Voice.FileID)
+	return nil
 }

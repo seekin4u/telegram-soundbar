@@ -102,17 +102,12 @@ func handleVoice(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 	filename := "mda-ebat.ogg"
 	cache := loadCache()
+	caption := "Kolomoiskiy"
+	chatID := update.Message.Chat.ID
 
-	if fileID, ok := cache[filename]; ok {
+	if fileID, ok := getCachedFileID(filename); ok {
 		log.Printf("Using cached file_id for %s", filename)
-
-		voice := &bot.SendVoiceParams{
-			ChatID:  update.Message.Chat.ID,
-			Voice:   &models.InputFileString{Data: fileID},
-			Caption: "Kolomoiskiy(C)",
-		}
-
-		if _, err := b.SendVoice(ctx, voice); err != nil {
+		if err := sendCachedVoice(ctx, b, chatID, fileID, caption+"(c)"); err != nil {
 			log.Printf("failed to send cached voice: %v", err)
 		}
 		return
@@ -128,9 +123,9 @@ func handleVoice(ctx context.Context, b *bot.Bot, update *models.Update) {
 	defer f.Close()
 
 	voice := &bot.SendVoiceParams{
-		ChatID:  update.Message.Chat.ID,
+		ChatID:  chatID,
 		Voice:   &models.InputFileUpload{Filename: "mda-ebat.ogg", Data: f},
-		Caption: "Kolomoiskiy",
+		Caption: caption, //append (c) later
 	}
 
 	sent, err := b.SendVoice(ctx, voice)
@@ -152,4 +147,20 @@ func handleVoice(ctx context.Context, b *bot.Bot, update *models.Update) {
 	saveCache(cache)
 
 	log.Printf("Cached new file_id for %s: %s", filename, fileID)
+}
+
+func getCachedFileID(filename string) (string, bool) {
+	cache := loadCache()
+	fileID, ok := cache[filename]
+	return fileID, ok
+}
+
+func sendCachedVoice(ctx context.Context, b *bot.Bot, chatID int64, fileID, caption string) error {
+	voice := &bot.SendVoiceParams{
+		ChatID:  chatID,
+		Voice:   &models.InputFileString{Data: fileID},
+		Caption: caption,
+	}
+	_, err := b.SendVoice(ctx, voice)
+	return err
 }

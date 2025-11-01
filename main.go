@@ -15,6 +15,7 @@ import (
 
 const cacheFile = "cache.json"
 
+// locking RW operations
 var cacheMu sync.Mutex
 
 // cache is a map of string - string key/values
@@ -29,12 +30,12 @@ func loadCache() Cache {
 		if os.IsNotExist(err) {
 			return cache // no cache, corrupt format?
 		}
-		log.Printf("failed to read cache from %s: %v", err, cacheFile)
+		log.Printf("Failed to read cache from %s: %v", err, cacheFile)
 		return cache
 	}
 
 	if err := json.Unmarshal(data, &cache); err != nil {
-		log.Printf("failed to parse cache from %s: %v", err, cacheFile)
+		log.Printf("Failed to parse cache from %s: %v", err, cacheFile)
 	}
 
 	return cache
@@ -46,12 +47,12 @@ func saveCache(cache Cache) {
 
 	data, err := json.MarshalIndent(cache, "", "  ")
 	if err != nil {
-		log.Printf("failed to encode cache to %s: %v", cacheFile, err)
+		log.Printf("Failed to encode cache to %s: %v", cacheFile, err)
 		return
 	}
 
 	if err := os.WriteFile(cacheFile, data, 0644); err != nil {
-		log.Printf("failed to write cache file to %s: %v", cacheFile, err)
+		log.Printf("Failed to write cache file to %s: %v", cacheFile, err)
 	}
 }
 
@@ -68,7 +69,7 @@ func main() {
 
 	b, err := bot.New(token, bot.WithDefaultHandler(defaultHandler))
 	if err != nil {
-		log.Fatalf("failed to create bot: %v", err)
+		log.Fatalf("Failed to create bot: %v", err)
 	}
 
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, handleStart)
@@ -80,7 +81,7 @@ func main() {
 
 	botname, berr := b.GetMe(context.Background())
 	if berr != nil {
-		log.Fatal("botname failed")
+		log.Fatal("Botname failed")
 	}
 
 	log.Printf("Bot started as @%s", botname.Username)
@@ -104,7 +105,7 @@ func handleStart(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 func makeVoiceHandler(inputFilename string, inputCaption string) func(context.Context, *bot.Bot, *models.Update) {
 	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
-		log.Printf("User /%s", inputFilename)
+		log.Printf("[%s] %s (%s)", update.Message.From.Username, update.Message.Text, inputFilename)
 
 		filename := inputFilename
 		caption := inputCaption
@@ -123,28 +124,6 @@ func makeVoiceHandler(inputFilename string, inputCaption string) func(context.Co
 		if err := uploadAndCacheVoice(ctx, b, chatID, filename, caption); err != nil {
 			log.Printf("Failed to upload and cache voice: %v", err)
 		}
-	}
-}
-
-func handleVoice(ctx context.Context, b *bot.Bot, update *models.Update) {
-	log.Printf("User /mda-ebat")
-
-	filename := "mda-ebat.ogg"
-	caption := "Kolomoiskiy"
-	chatID := update.Message.Chat.ID
-
-	if fileID, ok := getCachedFileID(filename); ok {
-		log.Printf("Using cached file_id for %s", filename)
-		if err := sendCachedVoice(ctx, b, chatID, fileID, caption+"(c)"); err != nil {
-			log.Printf("Failed to send cached voice: %v", err)
-		}
-		return
-	}
-
-	// ELSE, it is not cached - load for the first time amnd then save cache
-
-	if err := uploadAndCacheVoice(ctx, b, chatID, filename, caption); err != nil {
-		log.Printf("Failed to upload and cache voice: %v", err)
 	}
 }
 

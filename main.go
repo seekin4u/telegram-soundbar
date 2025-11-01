@@ -72,7 +72,11 @@ func main() {
 	}
 
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, handleStart)
-	b.RegisterHandler(bot.HandlerTypeMessageText, "/voice", bot.MatchTypeExact, handleVoice)
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/kolomoiskiy", bot.MatchTypeExact, makeVoiceHandler("mda-ebat.ogg", "Kolomoiskiy"))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/nahui", bot.MatchTypeExact, makeVoiceHandler("nahui.ogg", "Pashol nahui"))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/pasha", bot.MatchTypeExact, makeVoiceHandler("pasha.ogg", "Pavlo: greetings"))
+	b.RegisterHandler(bot.HandlerTypeMessageText, "/sunboy-tezhelo", bot.MatchTypeExact, makeVoiceHandler("tezhelo.ogg", "Sunboy: hard"))
+	//refactor to closures
 
 	botname, berr := b.GetMe(context.Background())
 	if berr != nil {
@@ -92,10 +96,34 @@ func defaultHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 func handleStart(ctx context.Context, b *bot.Bot, update *models.Update) {
 	msg := &bot.SendMessageParams{
 		ChatID: update.Message.Chat.ID,
-		Text:   "Hi! Send /voice to get your voice message 🎙️",
+		Text:   "🎙️ 🎙️ 🎙️ кто прочитал тот пидор 🎙️ 🎙️ 🎙️",
 	}
 	b.SendMessage(ctx, msg)
 	log.Print("User /start")
+}
+
+func makeVoiceHandler(inputFilename string, inputCaption string) func(context.Context, *bot.Bot, *models.Update) {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		log.Printf("User /%s", inputFilename)
+
+		filename := inputFilename
+		caption := inputCaption
+		chatID := update.Message.Chat.ID
+
+		if fileID, ok := getCachedFileID(filename); ok {
+			log.Printf("Using cached file_id for %s", filename)
+			if err := sendCachedVoice(ctx, b, chatID, fileID, caption+"(c)"); err != nil {
+				log.Printf("Failed to send cached voice: %v", err)
+			}
+			return
+		}
+
+		// ELSE, it is not cached - load for the first time amnd then save cache
+
+		if err := uploadAndCacheVoice(ctx, b, chatID, filename, caption); err != nil {
+			log.Printf("Failed to upload and cache voice: %v", err)
+		}
+	}
 }
 
 func handleVoice(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -134,7 +162,10 @@ func sendCachedVoice(ctx context.Context, b *bot.Bot, chatID int64, fileID, capt
 		Caption: caption,
 	}
 	_, err := b.SendVoice(ctx, voice)
-	return fmt.Errorf("failed to SendVoiceParams w/ InputFileString: %w", err)
+	if err != nil {
+		return fmt.Errorf("failed to SendVoiceParams w/ InputFileString: %w", err)
+	}
+	return nil
 }
 
 func uploadAndCacheVoice(ctx context.Context, b *bot.Bot, chatID int64, filename, caption string) error {
